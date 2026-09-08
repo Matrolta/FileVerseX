@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Archivos from './pages/Archivos';
 import './App.css';
 import Colecciones from './pages/Colecciones';
+import Administracion from './pages/Administracion';
 function App() {
   return (
     <BrowserRouter>
@@ -16,6 +17,8 @@ function App() {
         <Link to="/archivos">Archivos</Link>
         {' | '}
         <Link to="/colecciones">Colecciones</Link>
+        {' | '}
+        <Link to="/administracion">Administración</Link>
       </nav>
 
       <Routes>
@@ -23,6 +26,7 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/archivos" element={<Archivos />} />
         <Route path="/colecciones" element={<Colecciones />} />
+        <Route path="/administracion" element={<Administracion />} />
       </Routes>
 
     </BrowserRouter>

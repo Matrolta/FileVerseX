@@ -17,6 +17,35 @@ export const usuarios: Usuario[] = [];
 
 const JWT_SECRET = 'fileversex_clave_secreta';
 
+const crearAdminTemporal = async () => {
+  const adminExistente = usuarios.find(
+    (usuario) =>
+      usuario.correo === 'admin@fileversex.com'
+  );
+
+  if (adminExistente) {
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(
+    'Admin123',
+    10
+  );
+
+  usuarios.push({
+    id: 1,
+    nombre: 'Administrador',
+    correo: 'admin@fileversex.com',
+    password: passwordHash,
+    descripcion: 'Administrador del sistema',
+    fotoPerfil: '',
+    rol: 'admin',
+    estado: 'activo'
+  });
+};
+
+crearAdminTemporal();
+
 export const registrarUsuario = async (
   req: Request,
   res: Response
@@ -30,6 +59,7 @@ export const registrarUsuario = async (
       fotoPerfil
     } = req.body;
 
+    // Validar campos obligatorios
     if (!nombre || !correo || !password) {
       return res.status(400).json({
         message:
@@ -37,8 +67,34 @@ export const registrarUsuario = async (
       });
     }
 
+    // Validar tamaño de contraseña
+    if (password.length < 8) {
+      return res.status(400).json({
+        message:
+          'La contraseña debe tener al menos 8 caracteres'
+      });
+    }
+
+    // Validar que tenga al menos una letra
+    const tieneLetra =
+      /[A-Za-z]/.test(password);
+
+    // Validar que tenga al menos un número
+    const tieneNumero =
+      /[0-9]/.test(password);
+
+    if (!tieneLetra || !tieneNumero) {
+      return res.status(400).json({
+        message:
+          'La contraseña debe contener al menos una letra y un número'
+      });
+    }
+
+    // Evitar correos repetidos
     const usuarioExistente = usuarios.find(
-      (usuario) => usuario.correo === correo
+      (usuario) =>
+        usuario.correo.toLowerCase() ===
+        correo.toLowerCase()
     );
 
     if (usuarioExistente) {
@@ -48,6 +104,7 @@ export const registrarUsuario = async (
       });
     }
 
+    // Cifrar contraseña
     const passwordHash = await bcrypt.hash(
       password,
       10
@@ -110,7 +167,8 @@ export const iniciarSesion = async (
 
     const usuario = usuarios.find(
       (usuario) =>
-        usuario.correo === correo
+        usuario.correo.toLowerCase() ===
+        correo.toLowerCase()
     );
 
     if (!usuario) {
