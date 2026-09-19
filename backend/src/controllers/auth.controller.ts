@@ -1,55 +1,12 @@
 import type { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { db } from '../config/database';
 
-export interface Usuario {
-  id: number;
-  nombre: string;
-  correo: string;
-  password: string;
-  descripcion?: string;
-  fotoPerfil?: string;
-  rol: 'usuario' | 'admin';
-  estado: 'activo' | 'bloqueado';
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'fileversex_clave_secreta';
 
-export const usuarios: Usuario[] = [];
-
-const JWT_SECRET = 'fileversex_clave_secreta';
-
-const crearAdminTemporal = async () => {
-  const adminExistente = usuarios.find(
-    (usuario) =>
-      usuario.correo === 'admin@fileversex.com'
-  );
-
-  if (adminExistente) {
-    return;
-  }
-
-  const passwordHash = await bcrypt.hash(
-    'Admin123',
-    10
-  );
-
-  usuarios.push({
-    id: 1,
-    nombre: 'Administrador',
-    correo: 'admin@fileversex.com',
-    password: passwordHash,
-    descripcion: 'Administrador del sistema',
-    fotoPerfil: '',
-    rol: 'admin',
-    estado: 'activo'
-  });
-};
-
-crearAdminTemporal();
-
-export const registrarUsuario = async (
-  req: Request,
-  res: Response
-) => {
+// 1. REGISTRAR USUARIO CON MYSQL
+export const registrarUsuario = async (req: Request, res: Response) => {
   try {
     const {
       nombre,
@@ -62,172 +19,146 @@ export const registrarUsuario = async (
     // Validar campos obligatorios
     if (!nombre || !correo || !password) {
       return res.status(400).json({
-        message:
-          'Nombre, correo y contraseña son obligatorios'
+        message: 'Nombre, correo y contraseña son obligatorios'
       });
     }
 
     // Validar tamaño de contraseña
     if (password.length < 8) {
       return res.status(400).json({
-        message:
-          'La contraseña debe tener al menos 8 caracteres'
+        message: 'La contraseña debe tener al menos 8 caracteres'
       });
     }
 
-    // Validar que tenga al menos una letra
-    const tieneLetra =
-      /[A-Za-z]/.test(password);
-
-    // Validar que tenga al menos un número
-    const tieneNumero =
-      /[0-9]/.test(password);
+    // Validar formato (letra y número)
+    const tieneLetra = /[A-Za-z]/.test(password);
+    const tieneNumero = /[0-9]/.test(password);
 
     if (!tieneLetra || !tieneNumero) {
       return res.status(400).json({
-        message:
-          'La contraseña debe contener al menos una letra y un número'
+        message: 'La contraseña debe contener al menos una letra y un número'
       });
     }
 
-    // Evitar correos repetidos
-    const usuarioExistente = usuarios.find(
-      (usuario) =>
-        usuario.correo.toLowerCase() ===
-        correo.toLowerCase()
+    // Verificar en MySQL si el correo ya existe
+    const [usuariosExistentes]: any = await db.query(
+      'SELECT id_usuario FROM Usuarios WHERE email = ?',
+      [correo.toLowerCase()]
     );
 
-    if (usuarioExistente) {
+    if (usuariosExistentes.length > 0) {
       return res.status(400).json({
-        message:
-          'El correo ya está registrado'
+        message: 'El correo ya está registrado'
       });
     }
 
     // Cifrar contraseña
-    const passwordHash = await bcrypt.hash(
-      password,
-      10
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // Insertar usuario en MySQL (id_rol = 2 es USUARIO Estándar según schema.sql)
+    const [resultado]: any = await db.query(
+      `INSERT INTO Usuarios (id_rol, nombre_completo, email, password_hash, descripcion, foto_perfil)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        2, // Rol de Usuario Estándar
+        nombre,
+        correo.toLowerCase(),
+        passwordHash,
+        descripcion || null,
+        fotoPerfil || 'default_profile.png'
+      ]
     );
 
-    const nuevoUsuario: Usuario = {
-      id: usuarios.length + 1,
-      nombre,
-      correo,
-      password: passwordHash,
-      descripcion,
-      fotoPerfil,
-      rol: 'usuario',
-      estado: 'activo'
-    };
-
-    usuarios.push(nuevoUsuario);
-
     return res.status(201).json({
-      message:
-        'Usuario registrado correctamente',
+      message: 'Usuario registrado correctamente',
       usuario: {
-        id: nuevoUsuario.id,
-        nombre: nuevoUsuario.nombre,
-        correo: nuevoUsuario.correo,
-        descripcion:
-          nuevoUsuario.descripcion,
-        fotoPerfil:
-          nuevoUsuario.fotoPerfil,
-        rol: nuevoUsuario.rol,
-        estado: nuevoUsuario.estado
+        id: resultado.insertId,
+        nombre,
+        correo,
+        descripcion,
+        fotoPerfil: fotoPerfil || 'default_profile.png',
+        rol: 'USUARIO',
+        estado: 'activo'
       }
     });
   } catch (error) {
-    console.error(error);
-
+    console.error('Error en registrarUsuario:', error);
     return res.status(500).json({
-      message:
-        'Error al registrar usuario'
+      message: 'Error al registrar usuario en la base de datos'
     });
   }
 };
 
-export const iniciarSesion = async (
-  req: Request,
-  res: Response
-) => {
+// 2. INICIAR SESIÓN CON MYSQL
+export const iniciarSesion = async (req: Request, res: Response) => {
   try {
-    const {
-      correo,
-      password
-    } = req.body;
+    const { correo, password } = req.body;
 
     if (!correo || !password) {
       return res.status(400).json({
-        message:
-          'Correo y contraseña son obligatorios'
+        message: 'Correo y contraseña son obligatorios'
       });
     }
 
-    const usuario = usuarios.find(
-      (usuario) =>
-        usuario.correo.toLowerCase() ===
-        correo.toLowerCase()
+    // Consultar usuario uniendo la tabla Roles para saber si es ADMINISTRADOR o USUARIO
+    const [rows]: any = await db.query(
+      `SELECT u.id_usuario, u.nombre_completo, u.email, u.password_hash, u.esta_bloqueado, r.nombre AS nombre_rol
+       FROM Usuarios u
+       INNER JOIN Roles r ON u.id_rol = r.id_rol
+       WHERE u.email = ?`,
+      [correo.toLowerCase()]
     );
 
-    if (!usuario) {
+    if (rows.length === 0) {
       return res.status(401).json({
-        message:
-          'Correo o contraseña incorrectos'
+        message: 'Correo o contraseña incorrectos'
       });
     }
 
-    if (usuario.estado === 'bloqueado') {
+    const usuario = rows[0];
+
+    if (usuario.esta_bloqueado) {
       return res.status(403).json({
-        message:
-          'El usuario se encuentra bloqueado'
+        message: 'El usuario se encuentra bloqueado'
       });
     }
 
-    const passwordCorrecta =
-      await bcrypt.compare(
-        password,
-        usuario.password
-      );
+    const passwordCorrecta = await bcrypt.compare(password, usuario.password_hash);
 
     if (!passwordCorrecta) {
       return res.status(401).json({
-        message:
-          'Correo o contraseña incorrectos'
+        message: 'Correo o contraseña incorrectos'
       });
     }
 
+    // Generar Token JWT con el id y rol desde la base de datos
     const token = jwt.sign(
       {
-        id: usuario.id,
-        correo: usuario.correo,
-        rol: usuario.rol
+        id: usuario.id_usuario,
+        correo: usuario.email,
+        rol: usuario.nombre_rol
       },
       JWT_SECRET,
       {
-        expiresIn: '1h'
+        expiresIn: '8h'
       }
     );
 
     return res.status(200).json({
-      message:
-        'Inicio de sesión correcto',
+      message: 'Inicio de sesión correcto',
       token,
       usuario: {
-        id: usuario.id,
-        nombre: usuario.nombre,
-        correo: usuario.correo,
-        rol: usuario.rol,
-        estado: usuario.estado
+        id: usuario.id_usuario,
+        nombre: usuario.nombre_completo,
+        correo: usuario.email,
+        rol: usuario.nombre_rol,
+        estado: usuario.esta_bloqueado ? 'bloqueado' : 'activo'
       }
     });
   } catch (error) {
-    console.error(error);
-
+    console.error('Error en iniciarSesion:', error);
     return res.status(500).json({
-      message:
-        'Error al iniciar sesión'
+      message: 'Error al iniciar sesión'
     });
   }
 };
