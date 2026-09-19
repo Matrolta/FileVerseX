@@ -37,7 +37,7 @@ CREATE TABLE Usuarios (
     password_hash VARCHAR(255) NOT NULL,
     descripcion TEXT,
     foto_perfil VARCHAR(255) DEFAULT 'default_profile.png',
-    esta_bloqueado BOOLEAN DEFAULT FALSE,
+    esta_bloqueado BOOLEAN DEFAULT FALSE, -- Estado de bloqueo del usuario
     fecha_registro DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_rol) REFERENCES Roles(id_rol) ON DELETE RESTRICT
 );
@@ -54,6 +54,7 @@ CREATE TABLE Archivos (
     tipo_mime VARCHAR(100) NOT NULL, -- ej: image/png, audio/mp3, video/mp4, application/pdf
     tamano_bytes BIGINT NOT NULL,
     contador_descargas INT DEFAULT 0,
+    estado ENUM('activo', 'restringido', 'eliminado') DEFAULT 'activo', -- Estado del archivo
     fecha_subida DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
 );
@@ -144,6 +145,7 @@ CREATE TABLE Historial_Publicaciones (
 -- ------------------------------------------------------------
 
 CREATE INDEX idx_archivos_usuario ON Archivos(id_usuario);
+CREATE INDEX idx_archivos_estado ON Archivos(estado);
 CREATE INDEX idx_publicaciones_alcance ON Publicaciones(alcance, es_activa);
 CREATE INDEX idx_likes_publicacion ON Likes(id_publicacion);
 CREATE INDEX idx_comentarios_publicacion ON Comentarios(id_publicacion);
@@ -163,5 +165,5 @@ INSERT INTO Permisos (nombre, descripcion) VALUES
 INSERT INTO Rol_Permisos (id_rol, id_permiso) VALUES (1, 1), (1, 2);
 
 -- Insertar usuario Administrador inicial (password encriptada de ejemplo)
-INSERT INTO Usuarios (id_rol, nombre_completo, email, password_hash, descripcion) VALUES 
-(1, 'Administrador FileVerseX', 'admin@fileversex.com', '$2b$10$e8p.y.vK4W5pY9xO8d9e0uXmZJ8O8d9e0uXmZJ8O8d9e0uXmZJ', 'Cuenta Administradora Principal');
+INSERT INTO Usuarios (id_rol, nombre_completo, email, password_hash, descripcion, esta_bloqueado) VALUES 
+(1, 'Administrador FileVerseX', 'admin@fileversex.com', '$2b$10$e8p.y.vK4W5pY9xO8d9e0uXmZJ8O8d9e0uXmZJ8O8d9e0uXmZJ', 'Cuenta Administradora Principal', FALSE);
