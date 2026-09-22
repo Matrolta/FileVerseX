@@ -9,19 +9,19 @@ USE FileVerseX_DB;
 -- 1. MÓDULO DE USUARIOS, ROLES Y PERMISOS (RBAC)
 -- ------------------------------------------------------------
 
-CREATE TABLE Roles (
+CREATE TABLE IF NOT EXISTS Roles (
     id_rol INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(50) NOT NULL UNIQUE,
     descripcion VARCHAR(255)
 );
 
-CREATE TABLE Permisos (
+CREATE TABLE IF NOT EXISTS Permisos (
     id_permiso INT AUTO_INCREMENT PRIMARY KEY,
     nombre VARCHAR(100) NOT NULL UNIQUE,
     descripcion VARCHAR(255)
 );
 
-CREATE TABLE Rol_Permisos (
+CREATE TABLE IF NOT EXISTS Rol_Permisos (
     id_rol INT NOT NULL,
     id_permiso INT NOT NULL,
     PRIMARY KEY (id_rol, id_permiso),
@@ -29,7 +29,7 @@ CREATE TABLE Rol_Permisos (
     FOREIGN KEY (id_permiso) REFERENCES Permisos(id_permiso) ON DELETE CASCADE
 );
 
-CREATE TABLE Usuarios (
+CREATE TABLE IF NOT EXISTS Usuarios (
     id_usuario INT AUTO_INCREMENT PRIMARY KEY,
     id_rol INT NOT NULL DEFAULT 2, -- Rol 2: Usuario Estándar por defecto
     nombre_completo VARCHAR(150) NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE Usuarios (
 -- 2. MÓDULO DE GESTIÓN DE ARCHIVOS Y COLECCIONES
 -- ------------------------------------------------------------
 
-CREATE TABLE Archivos (
+CREATE TABLE IF NOT EXISTS Archivos (
     id_archivo INT AUTO_INCREMENT PRIMARY KEY,
     id_usuario INT NOT NULL,
     nombre_original VARCHAR(255) NOT NULL,
@@ -54,11 +54,12 @@ CREATE TABLE Archivos (
     tipo_mime VARCHAR(100) NOT NULL, -- ej: image/png, audio/mp3, video/mp4, application/pdf
     tamano_bytes BIGINT NOT NULL,
     contador_descargas INT DEFAULT 0,
+    estado ENUM('activo', 'restringido', 'eliminado') DEFAULT 'activo',
     fecha_subida DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
 );
 
-CREATE TABLE Colecciones (
+CREATE TABLE IF NOT EXISTS Colecciones (
     id_coleccion INT AUTO_INCREMENT PRIMARY KEY,
     id_usuario INT NOT NULL,
     nombre VARCHAR(150) NOT NULL,
@@ -68,7 +69,7 @@ CREATE TABLE Colecciones (
 );
 
 -- Tabla intermedia M:N (Un archivo puede estar en varias colecciones)
-CREATE TABLE Coleccion_Archivos (
+CREATE TABLE IF NOT EXISTS Coleccion_Archivos (
     id_coleccion INT NOT NULL,
     id_archivo INT NOT NULL,
     fecha_agregado DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -81,7 +82,7 @@ CREATE TABLE Coleccion_Archivos (
 -- 3. MÓDULO DE PUBLICACIONES, SOCIAL Y TRAZABILIDAD
 -- ------------------------------------------------------------
 
-CREATE TABLE Publicaciones (
+CREATE TABLE IF NOT EXISTS Publicaciones (
     id_publicacion INT AUTO_INCREMENT PRIMARY KEY,
     id_usuario INT NOT NULL,
     id_archivo INT NULL,
@@ -99,7 +100,7 @@ CREATE TABLE Publicaciones (
 );
 
 -- Destinatarios para publicaciones de alcance 'dirigida'
-CREATE TABLE Publicacion_Destinatarios (
+CREATE TABLE IF NOT EXISTS Publicacion_Destinatarios (
     id_publicacion INT NOT NULL,
     id_usuario_destinatario INT NOT NULL,
     PRIMARY KEY (id_publicacion, id_usuario_destinatario),
@@ -107,17 +108,17 @@ CREATE TABLE Publicacion_Destinatarios (
     FOREIGN KEY (id_usuario_destinatario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
 );
 
-CREATE TABLE Likes (
+CREATE TABLE IF NOT EXISTS Likes (
     id_like INT AUTO_INCREMENT PRIMARY KEY,
     id_publicacion INT NOT NULL,
     id_usuario INT NOT NULL,
     fecha_like DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_usuario_publicacion_like (id_publicacion, id_usuario),
+    CONSTRAINT uq_usuario_publicacion_like UNIQUE (id_publicacion, id_usuario),
     FOREIGN KEY (id_publicacion) REFERENCES Publicaciones(id_publicacion) ON DELETE CASCADE,
     FOREIGN KEY (id_usuario) REFERENCES Usuarios(id_usuario) ON DELETE CASCADE
 );
 
-CREATE TABLE Comentarios (
+CREATE TABLE IF NOT EXISTS Comentarios (
     id_comentario INT AUTO_INCREMENT PRIMARY KEY,
     id_publicacion INT NOT NULL,
     id_usuario INT NOT NULL,
@@ -128,7 +129,7 @@ CREATE TABLE Comentarios (
 );
 
 -- Trazabilidad de cambios de alcance y destinatarios
-CREATE TABLE Historial_Publicaciones (
+CREATE TABLE IF NOT EXISTS Historial_Publicaciones (
     id_historial INT AUTO_INCREMENT PRIMARY KEY,
     id_publicacion INT NOT NULL,
     alcance_anterior ENUM('publica', 'dirigida', 'privada') NOT NULL,
@@ -140,28 +141,35 @@ CREATE TABLE Historial_Publicaciones (
 );
 
 -- ------------------------------------------------------------
--- 4. ÍNDICES DE OPTIMIZACIÓN
+-- 4. ÍNDICES DE OPTIMIZACIÓN Y RENDIMIENTO
 -- ------------------------------------------------------------
 
 CREATE INDEX idx_archivos_usuario ON Archivos(id_usuario);
+CREATE INDEX idx_archivos_estado ON Archivos(estado);
 CREATE INDEX idx_publicaciones_alcance ON Publicaciones(alcance, es_activa);
 CREATE INDEX idx_likes_publicacion ON Likes(id_publicacion);
 CREATE INDEX idx_comentarios_publicacion ON Comentarios(id_publicacion);
+CREATE INDEX idx_destinatario_usuario ON Publicacion_Destinatarios(id_usuario_destinatario);
+CREATE INDEX idx_historial_publicacion ON Historial_Publicaciones(id_publicacion);
+
+-- Índices compuestos para consultas masivas, paginación y feeds
+CREATE INDEX idx_publicaciones_usuario_fecha ON Publicaciones(id_usuario, fecha_publicacion DESC);
+CREATE INDEX idx_publicaciones_usuario_activa ON Publicaciones(id_usuario, es_activa, alcance);
 
 -- ------------------------------------------------------------
 -- 5. DATOS INICIALES (SEEDING)
 -- ------------------------------------------------------------
 
-INSERT INTO Roles (id_rol, nombre, descripcion) VALUES 
+INSERT IGNORE INTO Roles (id_rol, nombre, descripcion) VALUES 
 (1, 'ADMINISTRADOR', 'Acceso total a moderación, gestión de usuarios y sistema'),
 (2, 'USUARIO', 'Usuario estándar de la plataforma');
 
-INSERT INTO Permisos (nombre, descripcion) VALUES 
+INSERT IGNORE INTO Permisos (nombre, descripcion) VALUES 
 ('MODERAR_CONTENIDO', 'Eliminar archivos, colecciones o comentarios de otros usuarios'),
 ('GESTIONAR_USUARIOS', 'Bloquear o restablecer contraseñas de usuarios');
 
-INSERT INTO Rol_Permisos (id_rol, id_permiso) VALUES (1, 1), (1, 2);
+INSERT IGNORE INTO Rol_Permisos (id_rol, id_permiso) VALUES (1, 1), (1, 2);
 
--- Insertar usuario Administrador inicial (password encriptada de ejemplo)
-INSERT INTO Usuarios (id_rol, nombre_completo, email, password_hash, descripcion) VALUES 
-(1, 'Administrador FileVerseX', 'admin@fileversex.com', '$2b$10$e8p.y.vK4W5pY9xO8d9e0uXmZJ8O8d9e0uXmZJ8O8d9e0uXmZJ', 'Cuenta Administradora Principal');
+-- Insertar usuario Administrador inicial
+INSERT IGNORE INTO Usuarios (id_rol, nombre_completo, email, password_hash, descripcion, esta_bloqueado) VALUES 
+(1, 'Administrador FileVerseX', 'admin@fileversex.com', '$2b$10$e8p.y.vK4W5pY9xO8d9e0uXmZJ8O8d9e0uXmZJ8O8d9e0uXmZJ', 'Cuenta Administradora Principal', FALSE);
